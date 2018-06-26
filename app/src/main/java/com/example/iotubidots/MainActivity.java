@@ -9,6 +9,11 @@ import com.google.android.things.pio.Gpio;
 import com.google.android.things.pio.GpioCallback;
 import com.google.android.things.pio.PeripheralManager;
 
+import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.MqttException;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Random;
@@ -45,6 +50,20 @@ public class MainActivity extends Activity {
     private Handler handler = new Handler();
     private Runnable runnable = new UpdateRunner();
 
+    //MQTT
+    private static final String TAG = "Things";
+    private static final String topic = "<villalpando.franz>/test";
+    private static final String topic2 = "<villalpando.franz>/boton";
+    private static final String hello = "Hello world!";
+    private static final String hello2 = "CLICK!";
+    private static final int qos = 1;
+    private static final String broker = "tcp://iot.eclipse.org:1883";
+    private static final String clientId = "Test134567325";
+
+    //MQTT LED
+
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -59,6 +78,22 @@ public class MainActivity extends Activity {
             Log.e(TAG, "Error en PeripheralIO API", e);
         }
         handler.post(runnable);
+//MQQTT
+        try {
+            MqttClient client = new MqttClient(broker, clientId, new MemoryPersistence());
+            Log.i(TAG, "Conectando al broker " + broker);
+            client.connect();
+            Log.i(TAG, "Conectado");
+            Log.i(TAG, "Publicando mensaje: " + hello);
+            MqttMessage message = new MqttMessage(hello.getBytes());
+            message.setQos(qos);
+            client.publish(topic, message);
+            Log.i(TAG, "Mensaje publicado");
+            client.disconnect();
+            Log.i(TAG, "Desconectado");
+        } catch (MqttException e) {
+            Log.e(TAG, "Error en MQTT.", e);
+        }
     }
 
     @Override
@@ -86,10 +121,35 @@ public class MainActivity extends Activity {
             final Data boton = new Data();
             boton.setVariable(idBoton);
             boton.setValue(buttonstatus);
-            ArrayList<Data> message = new ArrayList<Data>() {{
+            ArrayList<Data> message2 = new ArrayList<Data>() {{
                 add(boton);
             }};
-            UbiClient.getClient().sendData(message, token);
+            UbiClient.getClient().sendData(message2, token);
+
+            try {
+                MqttClient client = new MqttClient(broker, clientId, new MemoryPersistence());
+                Log.i(TAG, "Conectando al broker " + broker);
+                client.connect();
+                Log.i(TAG, "Conectado");
+                Log.i(TAG, "Publicando mensaje: " + hello2);
+                MqttMessage message = new MqttMessage(hello2.getBytes());
+                message.setQos(qos);
+                client.publish(topic2, message);
+                Log.i(TAG, "Mensaje publicado");
+                client.disconnect();
+                Log.i(TAG, "Desconectado");
+            } catch (MqttException e) {
+                Log.e(TAG, "Error en MQTT.", e);
+            }
+
+
+
+
+
+
+
+
+
             return true;
 // Mantenemos el callback activo
         }
