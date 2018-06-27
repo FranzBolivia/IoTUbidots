@@ -9,7 +9,10 @@ import com.google.android.things.pio.Gpio;
 import com.google.android.things.pio.GpioCallback;
 import com.google.android.things.pio.PeripheralManager;
 
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
@@ -39,7 +42,7 @@ import static android.content.ContentValues.TAG;
  *
  * @see <a href="https://github.com/androidthings/contrib-drivers#readme">https://github.com/androidthings/contrib-drivers#readme</a>
  */
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements MqttCallback {
 
     private final String token = "A1E-CZHbvOOx05ro4IKBdgdRkVPdFnBvdw";
     private final String idIluminacion = "5b32b34dc03f972c655ee056";
@@ -56,13 +59,18 @@ public class MainActivity extends Activity {
     private static final String topic2 = "<villalpando.franz>/boton";
     private static final String hello = "Hello world!";
     private static final String hello2 = "CLICK!";
+    private static final String hello3 = "Android Things Conectada!";
     private static final int qos = 1;
     private static final String broker = "tcp://iot.eclipse.org:1883";
     private static final String clientId = "Test134567325";
 
     //MQTT LED
 
-
+    private final String PIN_LED = "BCM18";
+    public Gpio mLedGpio;
+    private static final String topic_gestion = "<villalpando.franz>/gestion";
+    private static final String topic_led = "<villalpando.franz>/led";
+    MqttClient client;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -94,6 +102,35 @@ public class MainActivity extends Activity {
         } catch (MqttException e) {
             Log.e(TAG, "Error en MQTT.", e);
         }
+
+        try {
+            mLedGpio = service.openGpio(PIN_LED);
+            mLedGpio.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW);
+        } catch (IOException e) {
+            Log.e(TAG, "Error en el API PeripheralIO", e);
+        }
+        try {
+            String clientId = MqttClient.generateClientId();
+            client = new MqttClient(broker, clientId, new MemoryPersistence());
+            client.setCallback(this);
+            MqttConnectOptions connOpts = new MqttConnectOptions();
+            connOpts.setCleanSession(true);
+            connOpts.setKeepAliveInterval(60);
+            connOpts.setWill(topic_gestion, "Android Things desconectada!".getBytes(), qos, false);
+            Log.i(TAG, "Conectando al broker " + broker);
+            client.connect(connOpts);
+            Log.i(TAG, "Conectado");
+            Log.i(TAG, "Publicando mensaje: " + hello3);
+            MqttMessage message = new MqttMessage(hello3.getBytes());
+            message.setQos(qos);
+            client.publish(topic_gestion, message);
+            Log.i(TAG, "Mensaje publicado");
+            client.subscribe(topic_led, qos);
+            Log.i(TAG, "Suscrito a " + topic_led);
+        } catch (MqttException e) {
+            Log.e(TAG, "Error en MQTT.", e);
+        }
+
     }
 
     @Override
@@ -109,7 +146,26 @@ public class MainActivity extends Activity {
                 Log.e(TAG, "Error en PeripheralIO API", e);
             }
         }
+        try {
+            if (client != null && client.isConnected()) {
+
+                client.disconnect();
+            }
+        } catch (MqttException e) {
+            Log.e(TAG, "Error en MQTT.", e);
+        }
+        if (mLedGpio != null) {
+            try {
+                mLedGpio.close();
+            } catch (IOException e) {
+                Log.e(TAG, "Error en el API PeripheralIO", e);
+            } finally {
+                mLedGpio = null;
+            }
+        }
+
     }
+
 
     // Callback para envío asíncrono de pulsación de botón
     private GpioCallback mCallback = new GpioCallback() {
@@ -143,26 +199,20 @@ public class MainActivity extends Activity {
             }
 
 
-
-
-
-
-
-
-
             return true;
 // Mantenemos el callback activo
         }
     }; // Envío síncrono (5 segundos) del valor del fotorresistor
 
-    private class UpdateRunner implements Runnable {
-        @Override
-        public void run() {
-            readLDR();
-            Log.i(TAG, "Ejecución de acción periódica");
-            handler.postDelayed(this, 5000);
-        }
+private class UpdateRunner implements Runnable {
+    @Override
+    public void run() {
+        readLDR();
+        Log.i(TAG, "Ejecución de acción periódica");
+        handler.postDelayed(this, 5000);
     }
+
+}
 
     private void readLDR() {
         Data iluminacion = new Data();
@@ -173,5 +223,35 @@ public class MainActivity extends Activity {
         iluminacion.setValue((double) valor);
         message.add(iluminacion);
         UbiClient.getClient().sendData(message, token);
+    }
+
+
+    @Override
+    public void connectionLost(Throwable cause) {
+        Log.d(TAG, "Conexión perdida...");
+    }
+
+    @Override
+    public void messageArrived(String topic, MqttMessage message) throws Exception {
+        String payload = new String(message.getPayload());
+        Log.d(TAG, payload);
+        switch (payload) {
+            case "ON":
+                mLedGpio.setValue(true);
+                Log.d(TAG, "LED ON!");
+                break;
+            case "OFF":
+                mLedGpio.setValue(false);
+                Log.d(TAG, "LED OFF!");
+                break;
+            default:
+                Log.d(TAG, "Comando no soportado");
+                break;
+        }
+    }
+
+    @Override
+    public void deliveryComplete(IMqttDeliveryToken token) {
+        Log.d(TAG, "Entrega completa!");
     }
 }
